@@ -1,11 +1,8 @@
 use clap::{Parser, arg, command};
+use env_logger::Env;
 use log::{error, info};
-use simplelog::{
-    ColorChoice, CombinedLogger, Config, LevelFilter, TermLogger, TerminalMode, WriteLogger,
-};
 use std::{
     env,
-    fs::File,
     path::PathBuf,
     process::{Command, exit},
 };
@@ -19,20 +16,11 @@ struct Args {
 }
 
 fn main() {
-    CombinedLogger::init(vec![
-        TermLogger::new(
-            LevelFilter::Info,
-            Config::default(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        ),
-        WriteLogger::new(
-            LevelFilter::Info,
-            Config::default(),
-            File::create("C:/Users/Insprill/Downloads/code.log").unwrap(),
-        ),
-    ])
-    .unwrap();
+    let env = Env::default().filter_or("LOG_LEVEL", "info");
+    env_logger::builder()
+        .parse_env(env)
+        .format_target(false)
+        .init();
 
     info!(
         "Parsing args '{}'",
