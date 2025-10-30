@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use clap::{Parser, arg, command};
 use env_logger::Env;
-use log::{error, info};
+use log::{error, info, warn};
 use std::{
     env,
     path::PathBuf,
@@ -45,7 +45,7 @@ fn run() -> Result<()> {
             path_line_column.line.unwrap_or_default(),
             path_line_column.column.unwrap_or_default()
         );
-        let _ = Command::new("nvim")
+        let output = Command::new("nvim")
             .arg("--server")
             .arg("localhost:6969")
             .arg("--remote-send")
@@ -55,8 +55,19 @@ fn run() -> Result<()> {
                 path_line_column.line.unwrap_or_default(),
                 path_line_column.column.unwrap_or_default(),
             ))
-            .output()
-            .unwrap();
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.is_empty() {
+            info!("nvim: {}", stdout.trim());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.is_empty() {
+            error!("nvim: {}", stderr.trim());
+        }
+        match output.status.success() {
+            true => info!("nvim: exited with {}", output.status),
+            false => warn!("nvim: exited with {}", output.status),
+        }
     } else {
         error!("No args!");
     }
