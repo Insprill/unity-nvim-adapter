@@ -10,3 +10,9 @@ clap = { version = "4", features = ["derive"] }
 dirs = "6"
 log = "0.4"
 simplelog = "0.12"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+strip = true
+lto = true
