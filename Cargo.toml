@@ -6,6 +6,7 @@ repository = "https://github.com/Insprill/intellectual"
 edition = "2024"
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 env_logger = "0.11"

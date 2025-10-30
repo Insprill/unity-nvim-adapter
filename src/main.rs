@@ -1,3 +1,4 @@
+use anyhow::{Result, bail};
 use clap::{Parser, arg, command};
 use env_logger::Env;
 use log::{error, info};
@@ -22,21 +23,22 @@ fn main() {
         .format_target(false)
         .init();
 
+    if let Err(err) = run() {
+        error!("{:#}", err);
+        exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     info!(
         "Parsing args '{}'",
         env::args().collect::<Vec<String>>().join(" ")
     );
 
-    let args = match Args::try_parse() {
-        Ok(args) => args,
-        Err(err) => {
-            error!("{}", err);
-            exit(1);
-        }
-    };
+    let args = Args::try_parse()?;
 
     if let Some(path) = args.goto {
-        let path_line_column = parse_line_and_column_aware(&path).unwrap();
+        let path_line_column = parse_line_and_column_aware(&path)?;
         info!(
             "Opening file '{}' to line {} column {}",
             path_line_column.path,
@@ -56,8 +58,10 @@ fn main() {
             .output()
             .unwrap();
     } else {
-        error!("No args!!");
+        error!("No args!");
     }
+
+    Ok(())
 }
 
 // https://github.com/microsoft/vscode/blob/16f58dd3ac0b855df43dcd6a9d32a0911dca320f/src/vs/base/common/extpath.ts#L353-L386
@@ -72,7 +76,7 @@ pub struct PathWithLineAndColumn {
 // Disable all formatting so we can match the source as close as possible
 #[rustfmt::skip]
 #[allow(clippy::all)]
-pub fn parse_line_and_column_aware(raw_path: &str) -> Result<PathWithLineAndColumn, String> {
+pub fn parse_line_and_column_aware(raw_path: &str) -> Result<PathWithLineAndColumn> {
     let segments = raw_path.split(':'); // C:\file.txt:<line>:<column>
 
     let mut path: Option<String> = Option::None;
@@ -91,7 +95,7 @@ pub fn parse_line_and_column_aware(raw_path: &str) -> Result<PathWithLineAndColu
     }
 
     if !path.is_some() {
-        return Err("Format for `--goto` should be: `FILE:LINE(:COLUMN)`".to_string());
+        bail!("Format for `--goto` should be: `FILE:LINE(:COLUMN)`")
     }
 
     Ok(PathWithLineAndColumn {
