@@ -60,7 +60,7 @@ fn main() {
     }
 }
 
-// https://github.com/microsoft/vscode/blob/e2a3691756246693948f868f8603588c91c563d2/src/vs/base/common/extpath.ts#L353-L386
+// https://github.com/microsoft/vscode/blob/16f58dd3ac0b855df43dcd6a9d32a0911dca320f/src/vs/base/common/extpath.ts#L353-L386
 
 #[derive(Debug)]
 pub struct PathWithLineAndColumn {
@@ -69,48 +69,34 @@ pub struct PathWithLineAndColumn {
     pub column: Option<usize>,
 }
 
+// Disable all formatting so we can match the source as close as possible
+#[rustfmt::skip]
+#[allow(clippy::all)]
 pub fn parse_line_and_column_aware(raw_path: &str) -> Result<PathWithLineAndColumn, String> {
-    // Split the input on colons.
-    let segments = raw_path.split(':');
+    let segments = raw_path.split(':'); // C:\file.txt:<line>:<column>
 
-    let mut path: Option<String> = None;
-    let mut line: Option<usize> = None;
-    let mut column: Option<usize> = None;
+    let mut path: Option<String> = Option::None;
+    let mut line: Option<usize> = Option::None;
+    let mut column: Option<usize> = Option::None;
 
     for segment in segments {
-        // Try to parse the segment as a number.
-        match segment.parse::<usize>() {
-            Ok(num) => {
-                if line.is_none() {
-                    line = Some(num);
-                } else if column.is_none() {
-                    column = Some(num);
-                }
-                // If both line and column are already set, extra numbers are ignored.
-            }
-            Err(_) => {
-                // If the segment isn't a number, it's part of the file path.
-                if let Some(ref mut existing_path) = path {
-                    // Append with colon if the path is already partially constructed.
-                    existing_path.push(':');
-                    existing_path.push_str(segment);
-                } else {
-                    path = Some(segment.to_string());
-                }
-            }
+        let segment_as_number = segment.parse::<usize>();
+        if !segment_as_number.is_ok() {
+            path = Some(match path { Some(p) => format!("{p}:{segment}"), None => segment.to_string() });
+        } else if line.is_none() {
+            line = Some(segment_as_number.unwrap());
+        } else if column.is_none() {
+            column = Some(segment_as_number.unwrap());
         }
     }
 
-    // Ensure we got a valid file path.
-    let path = match path {
-        Some(p) if !p.is_empty() => p,
-        _ => return Err("Format for `--goto` should be: `FILE:LINE(:COLUMN)`".to_string()),
-    };
-
-    // If a line number was specified but no column, default column to 1.
-    if line.is_some() && column.is_none() {
-        column = Some(1);
+    if !path.is_some() {
+        return Err("Format for `--goto` should be: `FILE:LINE(:COLUMN)`".to_string());
     }
 
-    Ok(PathWithLineAndColumn { path, line, column })
+    Ok(PathWithLineAndColumn {
+        path: path.unwrap(),
+        line,
+        column: if column.is_some() { column } else if line.is_some() { Some(1) } else { None }, // If we have a line, make sure column is also set
+    })
 }
