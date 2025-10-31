@@ -2,6 +2,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, arg, command};
 use env_logger::Env;
 use log::{error, info, warn};
+use platform_dirs::AppDirs;
+use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -18,6 +20,25 @@ struct Args {
     goto: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+struct Config {
+    use_neovide: Option<bool>,
+}
+
+fn parse_config() -> Result<Option<Config>> {
+    if let Some(app_dir) = AppDirs::new(None, true) {
+        let cfg_dir = app_dir
+            .config_dir
+            .join(format!("{}.toml", env!("CARGO_PKG_NAME")));
+        if !fs::exists(&cfg_dir)? {
+            return Ok(None);
+        }
+        let cfg_str = fs::read_to_string(cfg_dir)?;
+        return Ok(Some(toml::from_str::<Config>(&cfg_str)?));
+    }
+    Ok(None)
+}
+
 fn main() {
     let env = Env::default().filter_or("LOG_LEVEL", "info");
     env_logger::builder()
@@ -32,6 +53,14 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    let cfg = &match parse_config() {
+        Ok(cfg) => cfg.unwrap_or_default(),
+        Err(err) => {
+            error!("Failed to read config! {:#}", err);
+            Config::default()
+        }
+    };
+
     info!(
         "Parsing args '{}'",
         env::args().collect::<Vec<String>>().join(" ")
@@ -53,19 +82,19 @@ fn run() -> Result<()> {
             path_line_column.line.unwrap_or_default(),
             path_line_column.column.unwrap_or_default(),
         );
-        send_nvim_cmd(&args.project_dir, &cmd)?;
+        send_nvim_cmd(cfg, &args.project_dir, &cmd)?;
     } else {
         // If the Visual Studio package isn't installed,
         // Unity will pass the file name as the first and only argument.
         let cmd = format!("<C-\\><C-N>:n {}<CR>", args.project_dir.to_string_lossy());
-        send_nvim_cmd(&args.project_dir, &cmd)?;
+        send_nvim_cmd(cfg, &args.project_dir, &cmd)?;
     }
 
     Ok(())
 }
 
-fn send_nvim_cmd(project_dir: &Path, cmd: &str) -> Result<()> {
-    let pipe_path = get_or_start_unity_adapter(project_dir)?;
+fn send_nvim_cmd(cfg: &Config, project_dir: &Path, cmd: &str) -> Result<()> {
+    let pipe_path = get_or_start_unity_adapter(cfg, project_dir)?;
     let output = Command::new("nvim")
         .arg("--server")
         .arg(pipe_path)
@@ -87,7 +116,7 @@ fn send_nvim_cmd(project_dir: &Path, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_or_start_unity_adapter(start_dir: &Path) -> Result<PathBuf> {
+fn get_or_start_unity_adapter(cfg: &Config, start_dir: &Path) -> Result<PathBuf> {
     let unity_root = find_unity_root(start_dir).context("Not a Unity project!")?;
     let pipe_path = get_unity_adapter_pipe(&unity_root)?;
     if pipe_path.exists() {
@@ -96,15 +125,22 @@ fn get_or_start_unity_adapter(start_dir: &Path) -> Result<PathBuf> {
 
     fs::create_dir_all(pipe_path.parent().context("")?)?;
 
-    let terminal = env::var("TERMINAL").context("TERMINAL not set, unsure which to use")?;
-    let args = [
-        "-e",
-        "bash",
-        "-c",
-        "nvim",
-        "--listen",
-        &pipe_path.to_string_lossy(),
-    ];
+    let use_neovide = cfg.use_neovide.unwrap_or_default();
+
+    let terminal = if use_neovide {
+        "neovide"
+    } else {
+        &env::var("TERMINAL").context("TERMINAL not set, unsure which to use")?
+    };
+
+    let mut args = if use_neovide {
+        vec!["--"]
+    } else {
+        vec!["-e", "bash", "-c", "nvim"]
+    };
+    args.push("--listen");
+    let pipe_path_str = pipe_path.to_string_lossy();
+    args.push(&pipe_path_str);
 
     info!(
         "Starting Neovim with command '{terminal} {}'",

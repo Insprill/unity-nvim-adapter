@@ -63,6 +63,18 @@ Now if you open a script or click on a log line, it will open in Neovim :)
 
 
 
+## Configuration
+
+The configuration is located at `~/.config/unity-nvim-adapter.toml`.
+
+Example default configuration
+```toml
+use_neovide = false
+```
+
+
+
+
 <!-- MARKDOWN LINKS & IMAGES -->
 [contributors-shield]: https://img.shields.io/github/contributors/Insprill/unity-nvim-adapter.svg?style=for-the-badge
 [contributors-url]: https://github.com/Insprill/unity-nvim-adapter/graphs/contributors
