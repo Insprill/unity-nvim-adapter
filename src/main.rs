@@ -1,11 +1,13 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, arg, command};
 use env_logger::Env;
 use log::{error, info, warn};
 use std::{
-    env,
-    path::PathBuf,
+    env, fs,
+    path::{Path, PathBuf},
     process::{Command, exit},
+    thread,
+    time::Duration,
 };
 
 #[derive(Parser, Debug)]
@@ -39,6 +41,7 @@ fn run() -> Result<()> {
 
     if let Some(path) = args.goto {
         let path_line_column = parse_line_and_column_aware(&path)?;
+        let pipe_path = get_or_start_unity_adapter(&path_line_column.path)?;
         info!(
             "Opening file '{}' to line {} column {}",
             path_line_column.path,
@@ -47,7 +50,7 @@ fn run() -> Result<()> {
         );
         let output = Command::new("nvim")
             .arg("--server")
-            .arg("localhost:6969")
+            .arg(pipe_path)
             .arg("--remote-send")
             .arg(format!(
                 "<C-\\><C-N>:n {}<CR>|:call cursor({},{})<CR>",
@@ -73,6 +76,72 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn get_or_start_unity_adapter(start_dir: &str) -> Result<PathBuf> {
+    let unity_root = find_unity_root(start_dir).context("Not a Unity project!")?;
+    let pipe_path = get_unity_adapter_pipe(&unity_root)?;
+    if pipe_path.exists() {
+        return Ok(pipe_path);
+    }
+
+    fs::create_dir_all(pipe_path.parent().context("")?)?;
+
+    let terminal = env::var("TERMINAL").context("TERMINAL not set, unsure which to use")?;
+    let args = [
+        "-e",
+        "bash",
+        "-c",
+        "nvim",
+        "--listen",
+        &pipe_path.to_string_lossy(),
+    ];
+
+    info!(
+        "Starting Neovim with command '{terminal} {}'",
+        args.join(" ")
+    );
+
+    Command::new(&terminal)
+        .current_dir(unity_root)
+        .args(args)
+        .spawn()?;
+
+    const SLEEP_TIME: u64 = 25;
+    const MAX_WAIT_TIME: u64 = 1000 / SLEEP_TIME;
+
+    for _ in 0..MAX_WAIT_TIME {
+        thread::sleep(Duration::from_millis(SLEEP_TIME));
+        if pipe_path.exists() {
+            return Ok(pipe_path);
+        }
+    }
+
+    bail!("Neovim or its server didn't start!")
+}
+
+fn get_unity_adapter_pipe(unity_root: &Path) -> Result<PathBuf> {
+    Ok(unity_root.join("Temp").join("unity_adapter_pipe"))
+}
+
+fn find_unity_root(start_dir: &str) -> Option<PathBuf> {
+    let mut current_dir = PathBuf::from(start_dir);
+
+    loop {
+        let project_version_path = current_dir
+            .join("ProjectSettings")
+            .join("ProjectVersion.txt");
+
+        if project_version_path.exists() {
+            return Some(current_dir);
+        }
+
+        if !current_dir.pop() {
+            break;
+        }
+    }
+
+    None
 }
 
 // https://github.com/microsoft/vscode/blob/16f58dd3ac0b855df43dcd6a9d32a0911dca320f/src/vs/base/common/extpath.ts#L353-L386
