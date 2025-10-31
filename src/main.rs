@@ -41,36 +41,19 @@ fn run() -> Result<()> {
 
     if let Some(path) = args.goto {
         let path_line_column = parse_line_and_column_aware(&path)?;
-        let pipe_path = get_or_start_unity_adapter(&path_line_column.path)?;
         info!(
             "Opening file '{}' to line {} column {}",
             path_line_column.path,
             path_line_column.line.unwrap_or_default(),
             path_line_column.column.unwrap_or_default()
         );
-        let output = Command::new("nvim")
-            .arg("--server")
-            .arg(pipe_path)
-            .arg("--remote-send")
-            .arg(format!(
-                "<C-\\><C-N>:n {}<CR>|:call cursor({},{})<CR>",
-                path_line_column.path,
-                path_line_column.line.unwrap_or_default(),
-                path_line_column.column.unwrap_or_default(),
-            ))
-            .output()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if !stdout.is_empty() {
-            info!("nvim: {}", stdout.trim());
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.is_empty() {
-            error!("nvim: {}", stderr.trim());
-        }
-        match output.status.success() {
-            true => info!("nvim: exited with {}", output.status),
-            false => warn!("nvim: exited with {}", output.status),
-        }
+        let cmd = format!(
+            "<C-\\><C-N>:n {}<CR>|:call cursor({},{})<CR>",
+            path_line_column.path,
+            path_line_column.line.unwrap_or_default(),
+            path_line_column.column.unwrap_or_default(),
+        );
+        send_nvim_cmd(&args.project_dir, &cmd)?;
     } else {
         error!("No args!");
     }
@@ -78,7 +61,30 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn get_or_start_unity_adapter(start_dir: &str) -> Result<PathBuf> {
+fn send_nvim_cmd(project_dir: &Path, cmd: &str) -> Result<()> {
+    let pipe_path = get_or_start_unity_adapter(project_dir)?;
+    let output = Command::new("nvim")
+        .arg("--server")
+        .arg(pipe_path)
+        .arg("--remote-send")
+        .arg(cmd)
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        info!("nvim: {}", stdout.trim());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        error!("nvim: {}", stderr.trim());
+    }
+    match output.status.success() {
+        true => info!("nvim: exited with {}", output.status),
+        false => warn!("nvim: exited with {}", output.status),
+    }
+    Ok(())
+}
+
+fn get_or_start_unity_adapter(start_dir: &Path) -> Result<PathBuf> {
     let unity_root = find_unity_root(start_dir).context("Not a Unity project!")?;
     let pipe_path = get_unity_adapter_pipe(&unity_root)?;
     if pipe_path.exists() {
@@ -124,7 +130,7 @@ fn get_unity_adapter_pipe(unity_root: &Path) -> Result<PathBuf> {
     Ok(unity_root.join("Temp").join("unity_adapter_pipe"))
 }
 
-fn find_unity_root(start_dir: &str) -> Option<PathBuf> {
+fn find_unity_root(start_dir: &Path) -> Option<PathBuf> {
     let mut current_dir = PathBuf::from(start_dir);
 
     loop {
