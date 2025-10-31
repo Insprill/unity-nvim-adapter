@@ -1,3 +1,11 @@
+local log_level = vim.log.levels.INFO -- Change for debugging
+
+local function notif(msg, level)
+	if level >= log_level then
+		vim.notify(msg, level)
+	end
+end
+
 local function find_unity_root(start_dir)
 	local start = vim.fs.normalize(start_dir or vim.loop.cwd())
 	local project_version = vim.fs.find("ProjectSettings/ProjectVersion.txt", { upward = true, path = start })[1]
@@ -8,7 +16,7 @@ end
 
 local function start_named_pipe_server(pipe_path)
 	vim.fn.serverstart(pipe_path)
-	vim.notify_once("Unity adapter started on pipe: " .. pipe_path, vim.log.levels.DEBUG)
+	notif("Unity adapter started on pipe: " .. pipe_path, vim.log.levels.DEBUG)
 end
 
 local function is_manual_listen()
@@ -30,14 +38,14 @@ end
 local function setup()
 	-- If we start Neovim with the --listen flag or NVIM_LISTEN_ADDRESS env var we shouldn't try to start another.
 	if is_manual_listen() then
-		vim.notify_once("Server is already running at " .. vim.v.servername, vim.log.levels.DEBUG)
+		notif("Server is already running at " .. vim.v.servername, vim.log.levels.DEBUG)
 		print(vim.env.NVIM_LISTEN_ADDRESS)
 		return
 	end
 
 	local root = find_unity_root()
 	if not root then
-		vim.notify_once("Not a Unity project", vim.log.levels.DEBUG)
+		notif("Not a Unity project", vim.log.levels.DEBUG)
 		return
 	end
 
@@ -48,7 +56,7 @@ local function setup()
 	-- The servername check above stops this from triggering when
 	-- the Rust side starts us with the --listen flag.
 	if vim.fn.filereadable(pipe_dir) == 1 then
-		vim.notify_once("Unity adapter already running for this project (" .. pipe_dir .. ")", vim.log.levels.WARN)
+		notif("Unity adapter already running for this project (" .. pipe_dir .. ")", vim.log.levels.WARN)
 		return
 	end
 
