@@ -55,7 +55,10 @@ fn run() -> Result<()> {
         );
         send_nvim_cmd(&args.project_dir, &cmd)?;
     } else {
-        error!("No args!");
+        // If the Visual Studio package isn't installed,
+        // Unity will pass the file name as the first and only argument.
+        let cmd = format!("<C-\\><C-N>:n {}<CR>", args.project_dir.to_string_lossy());
+        send_nvim_cmd(&args.project_dir, &cmd)?;
     }
 
     Ok(())
